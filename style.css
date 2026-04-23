@@ -1,0 +1,26 @@
+body{
+ background:black;
+ color:white;
+ font-family:sans-serif;
+ text-align:center;
+}
+
+.card{
+ background:#111;
+ padding:20px;
+ margin:50px auto;
+ width:300px;
+ border-radius:10px;
+}
+
+input,button{
+ margin:10px;
+ padding:10px;
+ width:90%;
+}
+.logs{
+ background:black;
+ border:1px solid cyan;
+ height:200px;
+ overflow:auto;
+}
