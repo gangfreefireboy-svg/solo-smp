@@ -1,74 +1,74 @@
 const express = require("express");
-const { spawn } = require("child_process");
 const fs = require("fs");
-const util = require("minecraft-server-util");
-
+const { spawn } = require("child_process");
+const { generateToken, verifyToken } = require("./auth");
 const app = express();
+
 app.use(express.json());
 app.use(express.static("public"));
 
-let servers = {}; // running servers
+let db = JSON.parse(fs.readFileSync("database.json"));
+let servers = {};
+let logs = {};
 
-function startServer(name, jar="server.jar", port=25565) {
-    const path = `./servers/${name}`;
+/* 🔐 REGISTER */
+app.post("/register", (req,res)=>{
+    const { username, password } = req.body;
 
-    if (!fs.existsSync(path)) {
-        return "Server not found";
-    }
+    if(db.users.find(u=>u.username===username))
+        return res.send("User exists");
 
-    const proc = spawn("java", ["-Xmx1G", "-jar", jar, "nogui"], {
-        cwd: path
+    db.users.push({ username, password, role:"user" });
+    fs.writeFileSync("database.json", JSON.stringify(db,null,2));
+
+    res.send("Registered");
+});
+
+/* 🔐 LOGIN */
+app.post("/login", (req,res)=>{
+    const { username, password } = req.body;
+
+    const user = db.users.find(u=>u.username===username && u.password===password);
+    if(!user) return res.send("Invalid");
+
+    const token = generateToken(user);
+    res.json({ token });
+});
+
+/* 🎮 CREATE SERVER */
+app.post("/create", verifyToken, (req,res)=>{
+    const name = req.body.name;
+    fs.mkdirSync(`./servers/${name}`, { recursive:true });
+    res.send("Created");
+});
+
+/* ▶ START SERVER */
+app.post("/start", verifyToken, (req,res)=>{
+    const name = req.body.name;
+
+    const proc = spawn("java", ["-Xmx1G","-jar","server.jar","nogui"], {
+        cwd:`./servers/${name}`
     });
 
     servers[name] = proc;
+    logs[name] = [];
 
-    proc.stdout.on("data", (data) => {
-        console.log(`[${name}] ${data}`);
+    proc.stdout.on("data", d=>{
+        logs[name].push(d.toString());
     });
 
-    proc.on("close", () => {
-        delete servers[name];
-    });
-
-    return "Started";
-}
-
-function stopServer(name) {
-    if (!servers[name]) return "Not running";
-    servers[name].kill("SIGINT");
-    return "Stopped";
-}
-
-app.post("/create", (req, res) => {
-    const { name } = req.body;
-
-    fs.mkdirSync(`./servers/${name}`);
-    res.send("Server created");
+    res.send("Started");
 });
 
-app.post("/start", (req, res) => {
-    res.send(startServer(req.body.name));
+/* ⏹ STOP */
+app.post("/stop", verifyToken, (req,res)=>{
+    servers[req.body.name]?.kill("SIGINT");
+    res.send("Stopped");
 });
 
-app.post("/stop", (req, res) => {
-    res.send(stopServer(req.body.name));
+/* 📡 LIVE LOGS */
+app.get("/logs/:name", verifyToken, (req,res)=>{
+    res.json(logs[req.params.name] || []);
 });
 
-app.post("/restart", (req, res) => {
-    stopServer(req.body.name);
-    setTimeout(() => {
-        startServer(req.body.name);
-    }, 2000);
-    res.send("Restarting");
-});
-
-app.get("/status/:name", async (req, res) => {
-    try {
-        const status = await util.status("localhost", 25565);
-        res.json(status);
-    } catch {
-        res.send("Offline");
-    }
-});
-
-app.listen(3000, () => console.log("VOTEX PANEL RUNNING"));
+app.listen(3000, ()=>console.log("VOTEX PRO RUNNING"));
